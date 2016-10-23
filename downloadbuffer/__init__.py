@@ -76,7 +76,7 @@ class DownloadBuffer(QueueIO):
         self.md5hash = b64decode(md5hash).hex()
 
         self.content_length = int(headers['Content-Length'])
-        print(self.unitizer(self.content_length, 'B', True))
+        # print(self.unitizer(self.content_length, 'B', True))
 
     def get_raw(self, first_byte=None):
         request = self.request.copy()
@@ -103,8 +103,8 @@ class DownloadBuffer(QueueIO):
                 self.md5hash == self.download_hash.hexdigest()):
                 return True
 
-            print(response.headers)
-            print(response.status_code)
+            # print(response.headers)
+            # print(response.status_code)
             raise ConnectionError()
         self.download_duration += (time.perf_counter() - start_time)
 
@@ -133,7 +133,7 @@ class DownloadBuffer(QueueIO):
         while size > len(self):
             if timeout is not None and wait_duration > timeout:
                 raise TimeoutError('Read took longer than timeout')
-            print('Waiting {}s for read...'.format((1.5**wait_count)*.00003))
+            # print('Waiting {}s for read...'.format((1.5**wait_count)*.00003))
             time.sleep((1.5**wait_count)*.00003)
             wait_duration += (1.5**wait_count)*.00003
             wait_count += 1
