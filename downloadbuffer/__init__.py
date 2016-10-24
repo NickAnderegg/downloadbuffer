@@ -11,7 +11,7 @@ This module implements the DownloadBuffer class
 '''
 
 __title__= 'downloadbuffer'
-__version__ = '0.1.2'
+__version__ = '0.1.4'
 __author__ = 'Nick Anderegg'
 __license__ = 'GPL-3.0'
 __copyright__ ='Copyright 2016 Nick Anderegg'
