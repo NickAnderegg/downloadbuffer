@@ -11,7 +11,7 @@ This module implements the DownloadBuffer class
 '''
 
 __title__= 'downloadbuffer'
-__version__ = '0.1.0'
+__version__ = '0.1.2'
 __author__ = 'Nick Anderegg'
 __license__ = 'GPL-3.0'
 __copyright__ ='Copyright 2016 Nick Anderegg'
@@ -51,15 +51,15 @@ class DownloadBuffer(QueueIO):
 
     def initialize(self):
         self.get_headers()
-        self.raw = self.get_raw()
+        self.get_raw()
         self.initialized = True
 
-    def start(self):
+    def start(self, chunk_size=1024**2):
         if not self.initialized:
             self.initialize()
 
         if self.initialized:
-            self._start_downloading()
+            self._start_downloading(chunk_size=chunk_size)
 
     def get_headers(self):
         request = self.request.copy()
@@ -71,9 +71,11 @@ class DownloadBuffer(QueueIO):
 
         headers = response.headers
 
-        md5hash = headers['x-goog-hash'].find('md5=') + 4
-        md5hash = headers['x-goog-hash'][md5hash:]
-        self.md5hash = b64decode(md5hash).hex()
+        if 'x-goog-hash' in headers:
+            md5hash = headers['x-goog-hash'].find('md5=') + 4
+            md5hash = headers['x-goog-hash'][md5hash:md5hash+24]
+            self.md5hash = b64decode(md5hash).hex()
+
 
         self.content_length = int(headers['Content-Length'])
         # print(self.unitizer(self.content_length, 'B', True))
@@ -102,17 +104,19 @@ class DownloadBuffer(QueueIO):
                 self.download_bytes == self.content_length and
                 self.md5hash == self.download_hash.hexdigest()):
                 return True
-
-            # print(response.headers)
-            # print(response.status_code)
             raise ConnectionError()
         self.download_duration += (time.perf_counter() - start_time)
 
-        if first_byte is None:
-            return response.raw
-        else:
-            # print(response.headers)
-            return response.raw
+        self.raw_stream = response.raw
+        return True
+
+    def write(self, b):
+        write_start = time.perf_counter()
+        super().write(b)
+        self.write_duration += (time.perf_counter() - write_start)
+
+    def write_speed(self):
+        return self.written_bytes / self.write_duration
 
     def read(self, size=-1, timeout=None):
         size = int(size)
@@ -133,16 +137,15 @@ class DownloadBuffer(QueueIO):
         while size > len(self):
             if timeout is not None and wait_duration > timeout:
                 raise TimeoutError('Read took longer than timeout')
-            # print('Waiting {}s for read...'.format((1.5**wait_count)*.00003))
-            time.sleep((1.5**wait_count)*.00003)
-            wait_duration += (1.5**wait_count)*.00003
+            time.sleep((1.2**wait_count)*.00001)
+            wait_duration += (1.2**wait_count)*.00001
             wait_count += 1
 
-        b = super().read(size)
+        read_start = time.perf_counter()
         if self.read_bytes == self.content_length:
+            print('Read bytes are content length')
             self.close()
-
-        return b
+        return super().read(size)
 
 
     def _start_downloading(self, chunk_size=1024**2):
@@ -157,10 +160,9 @@ class DownloadBuffer(QueueIO):
             print('Attempting to reconnect...')
             raw = self.get_raw(first_byte)
             if raw is False:
-                print('Attempt to reconnect failed, retrying in {}s'.format(2**(i+1)))
+                print('Attempt to reconnect failed, retrying in {:.3f}s'.format(2**(i+1)))
                 time.sleep(2**(i+1))
             else:
-                self.raw = raw
                 print('Connection re-established.')
                 return True
 
@@ -195,10 +197,10 @@ class DownloadBuffer(QueueIO):
 
 
     def _download_chunk(self, chunk_size=1024**2):
-        if not self.raw.closed:
+        if not self.raw_stream.closed:
             try:
                 start_time = time.perf_counter()
-                chunk = self.raw.read(chunk_size)
+                chunk = self.raw_stream.read(chunk_size)
                 self.download_duration += (time.perf_counter() - start_time)
 
                 self.write(chunk)
@@ -206,9 +208,10 @@ class DownloadBuffer(QueueIO):
                 self._update_download_hash(chunk)
 
                 return True
-            except (ReadTimeoutError, ValueError):
+            except:
                 return False
         else:
+            print('Raw is closed. File size:', self.unitizer(self.content_length, 'B', True), 'Read:', self.unitizer(self.written_bytes, 'B', True))
             return False
 
     def _update_download_hash(self, b, thread=False):
